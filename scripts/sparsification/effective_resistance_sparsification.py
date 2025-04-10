@@ -111,9 +111,11 @@ def process_subset(gpu_id, df_subset, q, epsilon=0.1, method='kts'):
         weights = df_subset['duration'].to_numpy()  # weight edge by visit duration
 
         # Time the Network constructor
+        print("running network constructor")
         start = perf_counter()
         network = Network(edge_list, weights)
         network_constructor_time = perf_counter() - start
+        print("network constructor complete")
 
         # Time the effective resistance calculation
         print("running effective resistance", flush=True)
