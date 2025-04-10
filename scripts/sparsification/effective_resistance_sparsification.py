@@ -106,32 +106,32 @@ def parse_args():
     return args
 
 def process_subset(gpu_id, df_subset, q, epsilon=0.1, method='kts'):
-    edge_list = df_subset[['pid', 'lid']].to_numpy()  # should be 2 x m shape
-    weights = df_subset['duration'].to_numpy()  # weight edge by visit duration
-
-    # Time the Network constructor
-    start = perf_counter()
-    network = Network(edge_list, weights)
-    network_constructor_time = perf_counter() - start
-
-    # Time the effective resistance calculation
-    print("running effective resistance", flush=True)
-    start = perf_counter()
     with cuda.Device(gpu_id):
+        edge_list = df_subset[['pid', 'lid']].to_numpy()  # should be 2 x m shape
+        weights = df_subset['duration'].to_numpy()  # weight edge by visit duration
+
+        # Time the Network constructor
+        start = perf_counter()
+        network = Network(edge_list, weights)
+        network_constructor_time = perf_counter() - start
+
+        # Time the effective resistance calculation
+        print("running effective resistance", flush=True)
+        start = perf_counter()
         Effective_R = network.effR(epsilon, method)
-    effR_time = perf_counter() - start
-    print("effective resistance complete", flush=True)
+        effR_time = perf_counter() - start
+        print("effective resistance complete", flush=True)
 
-    # Time the sparsification process
-    print("running network.spl", flush=True)
-    start = perf_counter()
-    print(f"q: {q}, Effective_R: {Effective_R}, seed: 2020", flush=True)
-    EffR_Sparse = network.spl(q, Effective_R, seed=2020)
-    spl_time = perf_counter() - start
-    print("network.spl complete", flush=True)
+        # Time the sparsification process
+        print("running network.spl", flush=True)
+        start = perf_counter()
+        print(f"q: {q}, Effective_R: {Effective_R}, seed: 2020", flush=True)
+        EffR_Sparse = network.spl(q, Effective_R, seed=2020)
+        spl_time = perf_counter() - start
+        print("network.spl complete", flush=True)
 
-    print(f"marginal times: {network_constructor_time}, {effR_time}, {spl_time}", flush=True)
-    filtered_df_subset = df_subset[df_subset[['pid', 'lid']].apply(tuple, axis=1).isin(map(tuple, EffR_Sparse.E_list))]
+        print(f"marginal times: {network_constructor_time}, {effR_time}, {spl_time}", flush=True)
+        filtered_df_subset = df_subset[df_subset[['pid', 'lid']].apply(tuple, axis=1).isin(map(tuple, EffR_Sparse.E_list))]
 
     return filtered_df_subset, network_constructor_time, effR_time, spl_time
 
