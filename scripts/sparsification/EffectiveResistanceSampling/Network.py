@@ -6,6 +6,7 @@ import numpy as np
 from scipy import sparse
 import networkx as nx
 
+from tqdm import tqdm
 
 import cupy as cp
 from cupyx.scipy.sparse import coo_matrix
@@ -40,25 +41,41 @@ class Network:
                     self.neighbors = self._findneighbors(A)
         else:
             self.E_list = cp.asarray(E_list)
-            self.weights = weights
+            self.weights = cp.asarray(weights)
             self.IDs = None
             self.data = None
             self.neighbors = {}
 
+            start = perf_counter()
             # construct adjacency matrix as sparse coo_matrix
-            n_nodes = int(cp.max(E_list)) + 1
-            row = cp.concatenate([E_list[:, 0], E_list[:, 1]])
-            col = cp.concatenate([E_list[:, 1], E_list[:, 0]])
-            data = cp.ones_like(row)
+            n_nodes = int(cp.max(self.E_list)) + 1
+            row = cp.concatenate([self.E_list[:, 0], self.E_list[:, 1]])
+            col = cp.concatenate([self.E_list[:, 1], self.E_list[:, 0]])
+            data = cp.concatenate((self.weights, self.weights))
 
-            self.graph = coo_matrix((data, (row, col)), shape=(n_nodes, n_nodes)).tocsr()
+            adj = coo_matrix((data, (row, col)), shape=(n_nodes, n_nodes)).tocsr()
+            end = perf_counter()
+            print(f"gpu-parallelized adj mat construction {end - start}")
 
-            # Create adjacency list from adj matrix
-            self.adjacency_list = {}
-            for i in range(self.graph.shape[0]):
-                row_start = self.graph.indptr[i]
-                row_end = self.graph.indptr[i + 1]
-                self.adjacency_list[i] = self.graph.indices[row_start:row_end].tolist()
+            
+            start = perf_counter()
+            self.neighbors = {}
+            for i in tqdm(range(adj.shape[0]), desc="Building neighbor map"):
+                indices = adj[i].indices
+                if indices.size > 0:
+                    self.neighbors[i] = indices.tolist()
+            end = perf_counter()
+            print(f"pythonic neighbor map construction: {end - start}")
+
+            self.graph = adj
+
+
+            # # Create adjacency list from adj matrix
+            # self.adjacency_list = {}
+            # for i in range(self.graph.shape[0]):
+            #     row_start = self.graph.indptr[i]
+            #     row_end = self.graph.indptr[i + 1]
+            #     self.adjacency_list[i] = self.graph.indices[row_start:row_end].tolist()
             #self.graph = self.adj()
 
     def _getIDs(self, G):
