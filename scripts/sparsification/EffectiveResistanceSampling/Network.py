@@ -5,7 +5,7 @@ import FastSims as fs
 import numpy as np
 from scipy import sparse
 import networkx as nx
-
+from time import perf_counter
 from tqdm import tqdm
 
 import cupy as cp
