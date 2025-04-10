@@ -39,7 +39,7 @@ class Network:
                     self.graph = A
                     self.neighbors = self._findneighbors(A)
         else:
-            self.E_list = E_list
+            self.E_list = cp.as_array(E_list)
             self.weights = weights
             self.IDs = None
             self.data = None
