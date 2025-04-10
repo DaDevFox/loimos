@@ -4,6 +4,8 @@ from scipy import sparse
 from scipy.sparse.linalg import cg
 from tqdm import tqdm
 
+from cupyx.scipy.sparse import coo_matrix
+
 
 def gpu_conjugate_gradient(A, b, x0=None, tol=1e-6, maxiter=1000):
     """Manual GPU-based Conjugate Gradient Solver using CuPy."""
@@ -88,6 +90,20 @@ def Elist_Mtrx_s(E_list, weights):
 
     return A
 
+def Elist_Mtrx_s_cp(E_cp, weights_cp):
+    """Build symmetric (undirected) adjacency matrix using CuPy and CSR format"""
+    n = int(cp.max(E_cp)) + 1
+
+    # Concatenate both directions for undirected graph
+    row = cp.concatenate((E_cp[:, 0], E_cp[:, 1]))
+    col = cp.concatenate((E_cp[:, 1], E_cp[:, 0]))
+    data = cp.concatenate((weights_cp, weights_cp))
+
+    # Create CSR matrix directly (auto-sums duplicate entries if any)
+    A = coo_matrix((data, (row, col)), shape=(n, n)).tocsr()
+    return A
+
+
 
 # Compute Laplacian, L
 # Par:
@@ -152,7 +168,7 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
     n = np.max(E_list) + 1
 
     # Obtain necessary matrices from edge list and edge weights
-    A = Elist_Mtrx_s(E_list, weights)  # adj matrix - sparse
+    A = Elist_Mtrx_s_cp(E_list, weights)  # adj matrix - sparse
     L = Lap_s(A)  # Laplacian (sparse array)
     B = sVIM(E_list)  # vertex indices matrix (crs)
     W = WDiag(weights)  # Diagonal weight matrix (dia)
