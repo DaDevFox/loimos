@@ -3,8 +3,45 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import cg
 from tqdm import tqdm
-from cupyx.scipy.sparse import diags
+from cupy.linalg import norm
+from cupyx.scipy.sparse import diags, dia_matrix
 from cupyx.scipy.sparse import coo_matrix, csr_matrix
+from cupyx.scipy.sparse.linalg import cg
+
+def cg_gpu(A, b, x0=None, tol=1e-5, maxiter=None):
+    m = A.shape[0]
+        
+    # Initial guess
+    if x0 is None:
+        x0 = cp.zeros(m, dtype=b.dtype)
+    # Set maximum iterations
+    if maxiter is None:
+        maxiter = m
+    x = x0
+    Ax = cp.asarray(A.dot(x))
+    r = b - Ax  # Residual
+    p = r.copy()  # Initial search direction
+    r_dot_r = cp.dot(r, r)
+    for i in range(maxiter):
+        Ap = cp.asarray(A.dot(p))  # Apply A to the direction vector
+        alpha = r_dot_r / cp.dot(p, Ap)  # Step size
+        
+        # In-place updates to x, r, and p to save memory
+        x += alpha * p  # Update the solution
+        r -= alpha * Ap  # Update the residual
+        r_dot_r_new = cp.dot(r, r)
+        if cp.sqrt(r_dot_r_new) < tol:
+            print(f"Convergence reached after {i+1} iterations.")
+            break
+
+        # In-place updates for p and the direction vector
+        beta = r_dot_r_new / r_dot_r  # Update the search direction coefficient
+        p *= beta  # In-place scaling of p
+        p += r  # In-place addition to p
+                
+        r_dot_r = r_dot_r_new
+
+    return x
 
 def gpu_conjugate_gradient(A, b, x0=None, tol=1e-6, maxiter=1000):
     """Manual GPU-based Conjugate Gradient Solver using CuPy."""
@@ -27,7 +64,6 @@ def gpu_conjugate_gradient(A, b, x0=None, tol=1e-6, maxiter=1000):
 
         if cp.sqrt(rs_new) < tol:
             break
-
         p = r + (rs_new / rs_old) * p
         rs_old = rs_new
 
@@ -176,6 +212,18 @@ def WDiag(weights):
 
     return W
 
+def WDiag_cp(weights_cp):
+    """
+    Compute the diagonal weights matrix W = diag(sqrt(weights))
+    Assumes weights_cp is a CuPy array of edge weights
+    """
+    m = len(weights_cp)
+    # Element-wise sqrt of weights using CuPy
+    weights_sqrt = cp.sqrt(weights_cp)
+    # Create diagonal sparse matrix (CuPy)
+    W = dia_matrix((weights_sqrt, [0]), shape=(m, m))
+    return W
+
 
 # EffR Approximation
 # method from Koutis et al.
@@ -199,7 +247,7 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
     A = Elist_Mtrx_s_cp(E_list, weights)  # adj matrix - sparse
     L = Lap_s_cp(A)  # Laplacian (sparse array)
     B = sVIM_cp(E_list)  # vertex indices matrix (crs)
-    W = WDiag(weights)  # Diagonal weight matrix (dia)
+    W = WDiag_cp(weights)  # Diagonal weight matrix (dia)
     scale = np.ceil(np.log2(n)) / epsilon  # set scale/resolution for Johnson-Lindenstrauss projection
 
     # Find preconditioner for L if precon is True
@@ -262,23 +310,28 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
 
     # Koutis et al. algorithm
     if type == 'kts':
-        effR_res = np.zeros(shape=(1, m))
+        effR_res = cp.zeros(shape=(1, m))
 
         if M is None:
             for i in tqdm(range(int(scale)), desc="EffR"):
-                ons1 = sparse.random(1, m, 1, format='csr') > 0.5
-                ons2 = sparse.random(1, m, 1, format='csr') > 0
+                ons1_data = cp.random.rand(m) > 0.5  # Random binary data
+                ons2_data = cp.random.rand(m) > 0  # Random binary data
+                ons1 = csr_matrix((ons1_data.astype(cp.float32), (cp.zeros(m), cp.arange(m))), shape=(1, m))
+                ons2 = csr_matrix((ons2_data.astype(cp.float32), (cp.zeros(m), cp.arange(m))), shape=(1, m))
+
                 ons_not = ons1 - ons2  # need this to pass by invalid 'not' operator
                 ons = ons1 + (-1 * ons_not)  # create Q matrix of 1s and -1s
-                ons = ons / np.sqrt(scale)
+                ons = ons / cp.sqrt(scale)
 
-                b = ons @ W @ B
-                b = b.toarray()
+                #b = ons @ W @ B
+                b = ons.dot(W).dot(B)
 
-                Z = gpu_conjugate_gradient(L, b.transpose(), tol=tol)[0]
-                Z = Z.transpose()
+                Z, info = cg(L, b.toarray().T, tol=tol)
+                Z = Z.T
 
-                effR_res = effR_res + np.abs(np.square(Z[E_list[:, 0]] - Z[E_list[:, 1]]))
+                #effR_res = effR_res + np.abs(np.square(Z[E_list[:, 0]] - Z[E_list[:, 1]]))
+                #effR_res = cp.sum(cp.abs(cp.square(Z[E_list[:, 0]] - Z[E_list[:, 1]])))
+                effR_res = effR_res + cp.abs(cp.square(Z[E_list[:, 0]] - Z[E_list[:, 1]]))
 
         else:
             for i in tqdm(range(int(scale)), desc="EffR"):
