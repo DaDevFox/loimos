@@ -7,6 +7,9 @@ from scipy import sparse
 import networkx as nx
 
 
+import cupy as cp
+from cupyx.scipy.sparse import coo_matrix
+
 class Network:
     def __init__(self, E_list, weights, *args):
         if len(args) != 0:
@@ -35,23 +38,28 @@ class Network:
                     self.E_list, self.weights = er.Mtrx_Elist(A)
                     self.graph = A
                     self.neighbors = self._findneighbors(A)
-
         else:
             self.E_list = E_list
             self.weights = weights
             self.IDs = None
             self.data = None
             self.neighbors = {}
-            for i in range(np.shape(E_list)[0]):
-                n1, n2 = E_list[i, :]
-                if n1 not in self.neighbors:
-                    self.neighbors[n1] = []
-                self.neighbors[n1].append(n2)
-                if n2 not in self.neighbors:
-                    self.neighbors[n2] = []
-                self.neighbors[n2].append(n1)
 
-            self.graph = self.adj()
+            # construct adjacency matrix as sparse coo_matrix
+            n_nodes = int(cp.max(E_list)) + 1
+            row = cp.concatenate([E_list[:, 0], E_list[:, 1]])
+            col = cp.concatenate([E_list[:, 1], E_list[:, 0]])
+            data = cp.ones_like(row)
+
+            self.graph = coo_matrix((data, (row, col)), shape=(n_nodes, n_nodes)).tocsr()
+
+            # Create adjacency list from adj matrix
+            self.adjacency_list = {}
+            for i in range(self.graph.shape[0]):
+                row_start = self.graph.indptr[i]
+                row_end = self.graph.indptr[i + 1]
+                self.adjacency_list[i] = self.graph.indices[row_start:row_end].tolist()
+            #self.graph = self.adj()
 
     def _getIDs(self, G):
         nodes = [i for i in G.nodes]
