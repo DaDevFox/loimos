@@ -108,7 +108,7 @@ def parse_args():
 def process_subset(gpu_id, df_subset, q, epsilon=0.1, method='kts'):
     with cuda.Device(gpu_id):
         edge_list = df_subset[['pid', 'lid']].dropna().astype(int).to_numpy()  # should be 2 x m shape
-        weights = df_subset['duration'].to_numpy()  # weight edge by visit duration
+        weights = df_subset['duration'].dropna().to_numpy()  # weight edge by visit duration
 
         # Time the Network constructor
         print("running network constructor")
