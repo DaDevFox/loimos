@@ -4,7 +4,7 @@ from scipy import sparse
 from scipy.sparse.linalg import cg
 from tqdm import tqdm
 from cupyx.scipy.sparse import diags
-from cupyx.scipy.sparse import coo_matrix
+from cupyx.scipy.sparse import coo_matrix, csr_matrix
 
 def gpu_conjugate_gradient(A, b, x0=None, tol=1e-6, maxiter=1000):
     """Manual GPU-based Conjugate Gradient Solver using CuPy."""
@@ -147,6 +147,23 @@ def sVIM(E_list):
 
     return B
 
+def sVIM_cp(E_list_cp):
+    """
+    Compute signed vertex-incidence matrix B using CuPy.
+    Assumes E_list_cp is a (m, 2) CuPy array of edges (tail, head).
+    Returns a sparse CSR matrix of shape (m, n_nodes)
+    """
+    m = E_list_cp.shape[0]
+    u = E_list_cp[:, 0]  # tails
+    v = E_list_cp[:, 1]  # heads
+    # Combine tail (+1) and head (-1) contributions
+    data = cp.concatenate((cp.ones(m), -cp.ones(m)))
+    row = cp.concatenate((cp.arange(m), cp.arange(m)))
+    col = cp.concatenate((u, v))
+    n_nodes = int(cp.max(E_list_cp)) + 1  # assume nodes are 0-indexed
+    B = csr_matrix((data, (row, col)), shape=(m, n_nodes))
+    return B
+
 
 # Compute weights matrix, W
 # Par:
@@ -181,7 +198,7 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
     # Obtain necessary matrices from edge list and edge weights
     A = Elist_Mtrx_s_cp(E_list, weights)  # adj matrix - sparse
     L = Lap_s_cp(A)  # Laplacian (sparse array)
-    B = sVIM(E_list)  # vertex indices matrix (crs)
+    B = sVIM_cp(E_list)  # vertex indices matrix (crs)
     W = WDiag(weights)  # Diagonal weight matrix (dia)
     scale = np.ceil(np.log2(n)) / epsilon  # set scale/resolution for Johnson-Lindenstrauss projection
 
