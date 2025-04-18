@@ -9,7 +9,7 @@ from time import perf_counter
 from tqdm import tqdm
 
 import cupy as cp
-from cupyx.scipy.sparse import coo_matrix
+from cupyx.scipy.sparse import coo_matrix, csr_matrix
 
 class Network:
     def __init__(self, E_list, weights, *args):
@@ -44,9 +44,7 @@ class Network:
             self.weights = cp.asarray(weights)
             self.IDs = None
             self.data = None
-            self.neighbors = {}
 
-            start = perf_counter()
             # construct adjacency matrix as sparse coo_matrix
             n_nodes = int(cp.max(self.E_list)) + 1
             row = cp.concatenate([self.E_list[:, 0], self.E_list[:, 1]])
@@ -54,21 +52,39 @@ class Network:
             data = cp.concatenate((self.weights, self.weights))
 
             adj = coo_matrix((data, (row, col)), shape=(n_nodes, n_nodes)).tocsr()
+
+            indptr_cpu = adj.indptr.get()
+            indices_cpu = adj.indices.get()
+
+            start = perf_counter()
+            neighbors = {
+                i: indices_cpu[indptr_cpu[i]:indptr_cpu[i + 1]].tolist()
+                for i in range(len(indptr_cpu) - 1)
+            }
             end = perf_counter()
-            print(f"gpu-parallelized adj mat construction {end - start}")
+            print(f"fast batch neighbor map construction: {end - start}")
 
             
-            start = perf_counter()
-            self.neighbors = {}
-            for i in tqdm(range(adj.shape[0]), desc="Building neighbor map"):
-                indices = adj[i].indices
-                if indices.size > 0:
-                    self.neighbors[i] = indices.tolist()
-            end = perf_counter()
-            print(f"pythonic neighbor map construction: {end - start}")
+            # start = perf_counter()
+            # self.neighbors = {}
+            # for i in tqdm(range(adj.shape[0]), desc="Building neighbor map"):
+            #     indices = adj[i].indices
+            #     if indices.size > 0:
+            #         self.neighbors[i] = indices.tolist()
+            # end = perf_counter()
+            # print(f"pythonic neighbor map construction: {end - start}")
+
+            # if len(neighbors) != len(self.neighbors):
+            #     print("PROBLEMMM")
+# 
+#             for i in range(len(neighbors)):
+#                 # Convert both arrays to sets for unordered comparison (if necessary)
+#                 if not cp.array_equal(cp.asarray(neighbors[i]), cp.asarray(self.neighbors[i])):
+#                     print(f"Difference found at node {i}:")
+#                     print(f"  Neighbors 1: {neighbors[i].tolist()}")
+#                     print(f"  Neighbors 2: {self.neighbors[i].tolist()}")
 
             self.graph = adj
-
 
             # # Create adjacency list from adj matrix
             # self.adjacency_list = {}
@@ -172,10 +188,9 @@ class Network:
         return er.EffR(self.E_list, self.weights, epsilon, method, tol=tol, precon=precon)
 
     def spl(self, q, effR, seed=None):
-        spl_net = spl.Spl_EffRSparse(n=self.graph.shape[0], E_list=self.E_list, weights=self.weights, q=q, effR=effR,
+        spl_net = spl.Spl_EffRSparse_cp(n=self.graph.shape[0], E_list=self.E_list, weights=self.weights, q=q, effR=effR,
                                      seed=seed)
-        print(spl_net)
-        E_list, weights = er.Mtrx_Elist(spl_net)
+        E_list, weights = er.Mtrx_Elist_cp(spl_net)
         print(E_list)
         return Network(E_list, weights)
 

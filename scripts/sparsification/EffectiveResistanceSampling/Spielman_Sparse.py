@@ -3,6 +3,7 @@ import numpy as np
 import scipy.sparse as sparse
 from EffRApprox import Mtrx_Elist
 from tqdm import tqdm
+import cupy as cp
 
 
 # from virtualenvs.AdaptiveAlgo import Adapt1
@@ -18,6 +19,26 @@ def normprobs(P):
     prob_fac = 1 / sum(P)
     P_n = [prob_fac * p for p in P]
     return np.array(P_n)
+
+import cupy as cp
+
+def normprobs_cp(P):
+    # Normalize probs such that sum(probs) = 1 using CuPy
+    prob_fac = 1 / cp.sum(P)  # Use cp.sum for summing elements on GPU
+    P_n = prob_fac * P  # Element-wise multiplication
+    return P_n  # Return as a CuPy array (already on GPU)
+
+
+# Normalize probs such that sum(probs)=1
+# Input:
+# P - list of probs
+# Output:
+# P_n - list of probs' that sum to 1
+def normprobs(P):
+    prob_fac = 1 / sum(P)
+    P_n = [prob_fac * p for p in P]
+    return np.array(P_n)
+
 
 
 # Create a list of edge R_eff
@@ -86,6 +107,48 @@ def Spl_EffRSparse_s(n, E_list, weights, q, effR, seed=None):
         H_list[i,0:2] = e[0], e[1]
     H = sparse.csr_matrix((H_list[:,2], (E_list[:,0], E_list[:,1])), shape=(n,n))
     return H + H.transpose()
+
+def safe_cupy_array(py_list, dtype=cp.int32, chunk_size=100_000):
+    """Convert a large Python list to a CuPy array without OOMing."""
+    n = len(py_list)
+    arr = cp.empty(n, dtype=dtype)
+    for i in range(0, n, chunk_size):
+        end = min(i + chunk_size, n)
+        arr[i:end] = cp.asarray(py_list[i:end], dtype=dtype)
+    return arr
+
+
+def Spl_EffRSparse_cp(n, E_list, weights, q, effR, seed=None):
+    ran.seed(seed)
+    P = []
+    for i in tqdm(range(len(E_list)), desc="Spl_EffRSparse_1"):
+        w_e = weights[i]
+        R_e = effR[i]
+        P.append((w_e * R_e) / (n - 1))
+
+    # TODO: debug OOM error
+
+    Pn = cp.array(normprobs_cp(cp.asarray(P)))  
+    C = ran.choices(list(zip(E_list, weights, Pn.get())), Pn.get(), k=q)  # CuPy to NumPy conversion for random.choices
+    # COO format: coordinate list (good for constructing sparse matrices)
+    row_idx = []
+    col_idx = []
+    data = []
+    for x in tqdm(range(q), desc="Spl_EffRSparse_2"):
+        e, w_e, p_e = C[x][0], C[x][1], C[x][2]
+        value = w_e / (q * p_e)
+        row_idx.append(e[0])
+        col_idx.append(e[1])
+        data.append(value)
+
+    row_idx = safe_cupy_array(row_idx)
+    col_idx = safe_cupy_array(col_idx)
+    data = safe_cupy_array(data)
+
+    H_sparse = cpx_sparse.coo_matrix((data, (row_idx, col_idx)), shape=(n, n))
+    H_symm = H_sparse + H_sparse.T  # Symmetric sparse matrix
+
+    return H_symm
 
 
 # Create a random uniform sparsifier

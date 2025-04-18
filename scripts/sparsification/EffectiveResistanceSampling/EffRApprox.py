@@ -81,6 +81,15 @@ def Mtrx_Elist(A):
 
     return elist.transpose(), weights
 
+def Mtrx_Elist_cp(A):
+    # Find edges using CuPy
+    j, i = cp.nonzero(cp.triu(A))  # CuPy equivalent of np.nonzero
+    elist = cp.vstack((i, j))  # CuPy equivalent of np.vstack
+    weights = A[cp.triu(A) != 0]  # CuPy equivalent of np.triu and indexing
+
+    return elist.transpose(), weights
+
+
 
 # Legacy code
 # def Mtrx_Elist(adj):
@@ -312,6 +321,8 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
     if type == 'kts':
         effR_res = cp.zeros(shape=(1, m))
 
+        WB = W.dot(B)
+
         if M is None:
             for i in tqdm(range(int(scale)), desc="EffR"):
                 ons1_data = cp.random.rand(m) > 0.5  # Random binary data
@@ -324,7 +335,7 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
                 ons = ons / cp.sqrt(scale)
 
                 #b = ons @ W @ B
-                b = ons.dot(W).dot(B)
+                b = ons.dot(WB)
 
                 Z, info = cg(L, b.toarray().T, tol=tol)
                 Z = Z.T
