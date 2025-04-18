@@ -1,4 +1,8 @@
 import random as ran
+import cupy as cp
+from cupyx.scipy.sparse import coo_matrix
+from scipy.sparse import csr_matrix
+import numpy as np
 import numpy as np
 import scipy.sparse as sparse
 from EffRApprox import Mtrx_Elist
@@ -122,36 +126,78 @@ def Spl_EffRSparse_cp(n, E_list, weights, q, effR, seed=None):
     ran.seed(seed)
     P = []
     for i in tqdm(range(len(E_list)), desc="Spl_EffRSparse_1"):
-        w_e = weights[i]
-        R_e = effR[i]
-        P.append((w_e * R_e) / (n - 1))
+       w_e = weights[i]
+       R_e = effR[i]
+       P.append((w_e * R_e) / (n - 1))
 
     # TODO: debug OOM error
 
-    Pn = cp.array(normprobs_cp(cp.asarray(P)))  
-    C = ran.choices(list(zip(E_list, weights, Pn.get())), Pn.get(), k=q)  # CuPy to NumPy conversion for random.choices
-    # COO format: coordinate list (good for constructing sparse matrices)
-    row_idx = []
-    col_idx = []
-    data = []
+    Pn = cp.array(normprobs_cp(cp.asarray(P)))
+    C = ran.choices(
+    list(zip(E_list, weights, Pn.get())), Pn.get(), k=q)  # CuPy to NumPy conversion for random.choices
+
+    row_idx = cp.empty(q, dtype=cp.int32)
+    col_idx = cp.empty(q, dtype=cp.int32)
+    data = cp.empty(q, dtype=cp.float32)
     for x in tqdm(range(q), desc="Spl_EffRSparse_2"):
         e, w_e, p_e = C[x][0], C[x][1], C[x][2]
         value = w_e / (q * p_e)
-        row_idx.append(e[0])
-        col_idx.append(e[1])
-        data.append(value)
+        row_idx[x] = e[0]
+        col_idx[x] = e[1]
+        data[x] = value
 
-    row_idx = safe_cupy_array(row_idx)
-    col_idx = safe_cupy_array(col_idx)
-    data = safe_cupy_array(data)
-
-    H_sparse = cpx_sparse.coo_matrix((data, (row_idx, col_idx)), shape=(n, n))
+    H_sparse = coo_matrix((data, (row_idx, col_idx)), shape=(n, n))
     H_symm = H_sparse + H_sparse.T  # Symmetric sparse matrix
-
     return H_symm
 
 
-# Create a random uniform sparsifier
+def Spl_EffRSparse_cp_2(n, E_list, weights, q, effR, seed=None):
+    if seed is not None:
+        cp.random.seed(seed)
+
+    # Move data to GPU
+    weights_gpu = cp.asarray(weights)
+    effR_gpu = cp.asarray(effR)
+    # Vectorized probability calculation
+    P_gpu = (weights_gpu * effR_gpu) / (n - 1)
+    P_sum = cp.sum(P_gpu)
+    Pn_gpu = P_gpu / P_sum
+    # Batch sampling to reduce memory usage
+
+    batch_size = min(1_000, q)
+    sampled_rows = []
+    sampled_cols = []
+    sampled_data = []
+    for batch_start in range(0, q, batch_size):
+            batch_end = min(batch_start + batch_size, q)
+            batch_q = batch_end - batch_start
+            # Sample indices on GPU
+            sampled_indices = cp.random.choice(len(E_list), size=batch_q, replace=True, p=Pn_gpu)
+            # Count occurrences of each edge
+            unique_indices, counts = cp.unique(sampled_indices, return_counts=True)
+            # Retrieve edge data
+            rows = cp.asarray(E_list)[unique_indices, 0]
+            cols = cp.asarray(E_list)[unique_indices, 1]
+            data = (
+                    weights_gpu[unique_indices] * counts / (q * Pn_gpu[unique_indices])
+                    )
+
+    # Append to batch results
+    sampled_rows.append(rows)
+    sampled_cols.append(cols)
+    sampled_data.append(data)
+    # Concatenate all batches
+    sampled_rows = cp.concatenate(sampled_rows)
+    sampled_cols = cp.concatenate(sampled_cols)
+    sampled_data = cp.concatenate(sampled_data)
+    # Create sparse matrix
+    H_sparse = coo_matrix((sampled_data, (sampled_rows, sampled_cols)), shape=(n, n))
+    H_csr = H_sparse.tocsr()
+    # Symmetrize the matrix
+    H_symm = H_csr + H_csr.T
+    return H_symm.get()
+
+
 # Input:
 # adj - Adj matrix
 # q - number of samples

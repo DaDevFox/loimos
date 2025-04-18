@@ -190,7 +190,8 @@ class Network:
     def spl(self, q, effR, seed=None):
         spl_net = spl.Spl_EffRSparse_cp(n=self.graph.shape[0], E_list=self.E_list, weights=self.weights, q=q, effR=effR,
                                      seed=seed)
-        E_list, weights = er.Mtrx_Elist_cp(spl_net)
+        print(spl_net)
+        E_list, weights = er.Mtrx_Elist_cp_sparse(spl_net)
         print(E_list)
         return Network(E_list, weights)
 

@@ -89,6 +89,20 @@ def Mtrx_Elist_cp(A):
 
     return elist.transpose(), weights
 
+def Mtrx_Elist_cp_sparse(A):
+    A = A.tocoo() # For easy row/col access
+
+    # Find edges using CuPy
+    mask = A.row < A.col
+    i = A.row[mask]
+    j = A.col[mask]
+    weights = A.data[mask]
+
+    elist = cp.vstack((i,j))
+
+    return elist.transpose(), weights
+
+
 
 
 # Legacy code
