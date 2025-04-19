@@ -334,30 +334,25 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
     # Koutis et al. algorithm
     if type == 'kts':
         effR_res = cp.zeros(shape=(1, m))
+        from cupyx.scipy.sparse import random as sparse_random
 
         WB = W.dot(B)
 
         if M is None:
-            for i in tqdm(range(int(scale)), desc="EffR"):
-                ons1_data = cp.random.rand(m) > 0.5  # Random binary data
-                ons2_data = cp.random.rand(m) > 0  # Random binary data
-                ons1 = csr_matrix((ons1_data.astype(cp.float32), (cp.zeros(m), cp.arange(m))), shape=(1, m))
-                ons2 = csr_matrix((ons2_data.astype(cp.float32), (cp.zeros(m), cp.arange(m))), shape=(1, m))
-
-                ons_not = ons1 - ons2  # need this to pass by invalid 'not' operator
-                ons = ons1 + (-1 * ons_not)  # create Q matrix of 1s and -1s
-                ons = ons / cp.sqrt(scale)
-
-                #b = ons @ W @ B
-                b = ons.dot(WB)
-
-                Z, info = cg(L, b.toarray().T, tol=tol)
-                Z = Z.T
-
-                #effR_res = effR_res + np.abs(np.square(Z[E_list[:, 0]] - Z[E_list[:, 1]]))
-                #effR_res = cp.sum(cp.abs(cp.square(Z[E_list[:, 0]] - Z[E_list[:, 1]])))
-                effR_res = effR_res + cp.abs(cp.square(Z[E_list[:, 0]] - Z[E_list[:, 1]]))
-
+            batch_size = 10
+            num_batches = int(cp.ceil(scale / batch_size))
+            for batch_idx in tqdm(range(num_batches), desc="EffR-batch"):
+                current_batch = min(batch_size, int(scale) - batch_idx * batch_size)
+                for _ in range(current_batch):
+                    ons_row = sparse_random(1, m, density=0.5, format="csr", dtype=cp.float32)
+                    ons_row = ons_row / cp.sqrt(scale)
+                    # Directly use CuPy arrays with cupyx.sparse.linalg.cg
+                    b_row = ons_row.dot(WB).toarray().ravel()
+                    Z, info = cg(L, b_row, tol=tol)
+                    # Z is already a CuPy array, no conversion needed
+                    
+                    diffs = Z[E_list[:, 0]] - Z[E_list[:, 1]]
+                    effR_res += cp.sum(diffs * diffs)
         else:
             for i in tqdm(range(int(scale)), desc="EffR"):
                 # Create memory saving vectors
