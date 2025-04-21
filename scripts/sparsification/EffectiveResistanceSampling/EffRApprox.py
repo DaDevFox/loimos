@@ -1,3 +1,4 @@
+from time import perf_counter
 import cupy as cp
 import numpy as np
 from scipy import sparse
@@ -331,6 +332,7 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
                       axis=0)  # Calculate distance between poitns for effR
         return effR
 
+    mempool = cp.get_default_memory_pool()
     # Koutis et al. algorithm
     if type == 'kts':
         effR_res = cp.zeros(shape=(1, m))
@@ -339,20 +341,28 @@ def EffR(E_list, weights, epsilon, type, tol=1e-10, precon=False):
         WB = W.dot(B)
 
         if M is None:
-            batch_size = 10
+            batch_size = 160
             num_batches = int(cp.ceil(scale / batch_size))
+            print(f"used bytes (pre batching): {mempool.used_bytes()}")
             for batch_idx in tqdm(range(num_batches), desc="EffR-batch"):
+                print(f"[batch {batch_idx} start] used bytes: {mempool.used_bytes()}")
                 current_batch = min(batch_size, int(scale) - batch_idx * batch_size)
+                print(f"current batch: {current_batch}")
+                times = []
                 for _ in range(current_batch):
-                    ons_row = sparse_random(1, m, density=0.5, format="csr", dtype=cp.float32)
+                    ons_row = sparse_random(1, m, density=1.0, format="csr", data_rvs=lambda size: cp.random.choice([-1, 1], size=size))
                     ons_row = ons_row / cp.sqrt(scale)
                     # Directly use CuPy arrays with cupyx.sparse.linalg.cg
                     b_row = ons_row.dot(WB).toarray().ravel()
+                    subtimer = perf_counter()
                     Z, info = cg(L, b_row, tol=tol)
+                    times.append(perf_counter()-subtimer)
                     # Z is already a CuPy array, no conversion needed
                     
                     diffs = Z[E_list[:, 0]] - Z[E_list[:, 1]]
                     effR_res += cp.sum(diffs * diffs)
+                print(f"[batch {batch_idx} end] used bytes: {mempool.used_bytes()}")
+                print(f"avg cg time: {sum(times)/len(times)}")
         else:
             for i in tqdm(range(int(scale)), desc="EffR"):
                 # Create memory saving vectors
