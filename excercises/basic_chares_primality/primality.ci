@@ -6,15 +6,8 @@ mainmodule PrimalityModule {
     unsigned long long value;
   };
 
-  message PrimalityBatchMsg {
-    unsigned long requestIdBase;
-    unsigned int count;
-    unsigned long long values[];
-  };
-
   message PrimalityResultMsg {
     unsigned long requestId;
-    unsigned long long value;
     int isPrime;
   };
 
@@ -26,6 +19,5 @@ mainmodule PrimalityModule {
   array [1D] CheckPrimality {
     entry CheckPrimality();
     entry void testNumber(PrimalityTaskMsg *msg);
-    entry void testBatch(PrimalityBatchMsg *msg);
   };
 }
