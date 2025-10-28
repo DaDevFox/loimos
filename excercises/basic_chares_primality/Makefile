@@ -1,4 +1,5 @@
-CHARMC ?= charmc
+include ../../src/Makefile.include
+
 TARGET := primality
 SOURCES := Primality.C
 CI := primality.ci

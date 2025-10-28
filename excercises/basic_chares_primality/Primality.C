@@ -20,7 +20,7 @@ struct ResultRecord {
 class Main : public CBase_Main {
  public:
   Main(CkArgMsg *msg);
-  void receiveResult(const PrimalityResult &result);
+  void receiveResult(PrimalityResultMsg *msg);
 
  private:
   void parseArgs(CkArgMsg *msg);
@@ -35,8 +35,8 @@ class Main : public CBase_Main {
 class CheckPrimality : public CBase_CheckPrimality {
  public:
   CheckPrimality();
-  void testNumber(const PrimalityTask &task);
-  void testBatch(const PrimalityBatch &batch);
+  void testNumber(PrimalityTaskMsg *msg);
+  void testBatch(PrimalityBatchMsg *msg);
 };
 
 Main::Main(CkArgMsg *msg)
@@ -79,22 +79,34 @@ void Main::startComputation() {
   CkExit();
 }
 
-void Main::receiveResult(const PrimalityResult &result) {
+void Main::receiveResult(PrimalityResultMsg *msg) {
+  if (!msg) {
+    return;
+  }
   CkPrintf("[scaffold] received placeholder result for request %lu (value %llu)\n",
-           result.requestId, result.value);
+           msg->requestId, msg->value);
+  delete msg;
 }
 
 CheckPrimality::CheckPrimality() {
   CkPrintf("[scaffold] instantiated check chare %d\n", thisIndex);
 }
 
-void CheckPrimality::testNumber(const PrimalityTask &task) {
-  CkPrintf("[scaffold] testNumber placeholder for request %lu\n", task.requestId);
+void CheckPrimality::testNumber(PrimalityTaskMsg *msg) {
+  if (!msg) {
+    return;
+  }
+  CkPrintf("[scaffold] testNumber placeholder for request %lu\n", msg->requestId);
+  delete msg;
 }
 
-void CheckPrimality::testBatch(const PrimalityBatch &batch) {
+void CheckPrimality::testBatch(PrimalityBatchMsg *msg) {
+  if (!msg) {
+    return;
+  }
   CkPrintf("[scaffold] testBatch placeholder for first request %lu (count %u)\n",
-           batch.requestIdBase, batch.count);
+           msg->requestIdBase, msg->count);
+  delete msg;
 }
 
 #include "primality.def.h"
