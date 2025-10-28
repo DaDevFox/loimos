@@ -1,14 +1,20 @@
 include ../../src/Makefile.include
 
 TARGET := primality
-SOURCES := Primality.C
+OBJS := Primality.o
+DECLS := primality.decl.h
 CI := primality.ci
 
 all: $(TARGET)
 
-$(TARGET): $(CI) $(SOURCES)
-	$(CHARMC) $(CI)
-	$(CHARMC) -o $@ $(SOURCES)
+$(TARGET): $(OBJS)
+	$(CHARMC) -language charm++ -o $@ $(OBJS)
+
+$(OBJS): %.o: %.C $(DECLS)
+	$(CHARMC) -c $<
+
+$(DECLS): %.decl.h: %.ci
+	$(CHARMC) $<
 
 clean:
 	-$(RM) $(TARGET) *.decl.h *.def.h *.o charmrun
