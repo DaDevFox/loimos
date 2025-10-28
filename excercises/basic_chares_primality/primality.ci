@@ -1,0 +1,31 @@
+mainmodule PrimalityModule {
+  readonly CProxy_Main mainProxy;
+
+  struct PrimalityTask {
+    unsigned long requestId;
+    unsigned long long value;
+  };
+
+  struct PrimalityBatch {
+    unsigned long requestIdBase;
+    unsigned int count;
+    PrimalityTask tasks[count];
+  };
+
+  struct PrimalityResult {
+    unsigned long requestId;
+    unsigned long long value;
+    int isPrime;
+  };
+
+  mainchare Main {
+    entry Main(CkArgMsg *msg);
+    entry void receiveResult(const PrimalityResult &result);
+  };
+
+  array [1D] CheckPrimality {
+    entry CheckPrimality();
+    entry void testNumber(const PrimalityTask &task);
+    entry void testBatch(const PrimalityBatch &batch);
+  };
+}
