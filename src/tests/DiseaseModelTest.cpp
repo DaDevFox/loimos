@@ -11,11 +11,14 @@
 #include "../readers/AttributeTable.h"
 #include "gtest/gtest.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
 #include <random>
+#include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace
@@ -40,8 +43,8 @@ namespace
     void SetUp() override
     {
       attribute_table_ = BuildTestAttributeTable();
-      disease_model_ = std::make_unique<DiseaseModel>(
-          "../data/disease_models/safe_risky.textproto", -1.0, attribute_table_);
+        disease_model_.reset(new DiseaseModel(
+          "../data/disease_models/safe_risky.textproto", -1.0, attribute_table_));
     }
 
     AttributeTable attribute_table_;
@@ -53,7 +56,7 @@ namespace
     const uint32_t N = 100;
 
     std::default_random_engine generator(12345);
-    uniform_int_distribution<int> distribution(0, 100);
+    std::uniform_int_distribution<int> distribution(0, 100);
 
     for (int i = 0; i < N; i++)
     {
@@ -67,14 +70,19 @@ namespace
   TEST_F(SafeRiskyDiseaseModelTest, ExposureTransitionsAreImmediate)
   {
     std::default_random_engine generator(12345);
-    std::array<std::tuple<int, std::tuple<int, int>>, 3> testCases{
-        {3, {4, 0}},                                // Exposure transitions are immediate
-        {2, {2, std::numeric_limits<Time>::max()}}, // Terminal states do not advance
-        {4, {5, 3 * DAY_LENGTH}}};                  // Timed transition returns duration in seconds
+    typedef std::tuple<int, std::tuple<int, int>> ExposureTestCase;
+    const std::array<ExposureTestCase, 3> testCases = {{
+        ExposureTestCase(3, std::make_tuple(4, 0)),                                // Exposure transitions are immediate
+        ExposureTestCase(2, std::make_tuple(2, std::numeric_limits<Time>::max())), // Terminal states do not advance
+        ExposureTestCase(4, std::make_tuple(5, 3 * DAY_LENGTH))                    // Timed transition returns duration in seconds
+    }};
 
-    for (const auto &[fromState, expected] : testCases)
+    for (const auto &testCase : testCases)
     {
-      auto transition = disease_model_->transitionFromState(fromState, &generator);
+      const int fromState = std::get<0>(testCase);
+      const std::tuple<int, int> &expected = std::get<1>(testCase);
+        const auto transition =
+          disease_model_->transitionFromState(fromState, &generator);
       EXPECT_EQ(std::get<0>(transition), std::get<0>(expected));
       EXPECT_EQ(std::get<1>(transition), std::get<1>(expected));
     }
@@ -82,18 +90,22 @@ namespace
 
   TEST_F(SafeRiskyDiseaseModelTest, InfectiousAndSusceptibleFlagsMatchModel)
   {
-    std::array<std::tuple<int, bool, bool>, 6> expected{
-        {0, false, true},  // healthy_safe
-        {1, true, false},  // infectious_safe
-        {2, false, false}, // recovered_safe
-        {3, false, true},  // healthy_risky
-        {4, true, false},  // infectious_risky
-        {5, false, false}  // recovered_risky
+    typedef std::tuple<int, bool, bool> FlagExpectation;
+    const std::array<FlagExpectation, 6> expected = {{
+        FlagExpectation(0, false, true),  // healthy_safe
+        FlagExpectation(1, true, false),  // infectious_safe
+        FlagExpectation(2, false, false), // recovered_safe
+        FlagExpectation(3, false, true),  // healthy_risky
+        FlagExpectation(4, true, false),  // infectious_risky
+        FlagExpectation(5, false, false)  // recovered_risky
 
-    };
+    }};
 
-    for (const auto &[state, isInfectious, isSusceptible] : expected)
+    for (const auto &entry : expected)
     {
+      const int state = std::get<0>(entry);
+      const bool isInfectious = std::get<1>(entry);
+      const bool isSusceptible = std::get<2>(entry);
       EXPECT_EQ(disease_model_->isInfectious(state), isInfectious);
       EXPECT_EQ(disease_model_->isSusceptible(state), isSusceptible);
     }
@@ -101,11 +113,20 @@ namespace
 
   TEST_F(SafeRiskyDiseaseModelTest, LookupStateNamesReflectProtoOrder)
   {
-    std::array<std::tuple<int, std::string>, 6> expected{
-        {0, "healthy_safe"}, {1, "infectious_safe"}, {2, "recovered_safe"}, {3, "healthy_risky"}, {4, "infectious_risky"}, {5, "recovered_risky"}};
+    typedef std::tuple<int, std::string> NameExpectation;
+    const std::array<NameExpectation, 6> expected = {{
+        NameExpectation(0, "healthy_safe"),
+        NameExpectation(1, "infectious_safe"),
+        NameExpectation(2, "recovered_safe"),
+        NameExpectation(3, "healthy_risky"),
+        NameExpectation(4, "infectious_risky"),
+        NameExpectation(5, "recovered_risky")
+    }};
 
-    for (const auto &[state, name] : expected)
+    for (const auto &entry : expected)
     {
+      const int state = std::get<0>(entry);
+      const std::string &name = std::get<1>(entry);
       EXPECT_EQ(disease_model_->lookupStateName(state), name);
     }
   }
@@ -118,29 +139,31 @@ namespace
 
     DiseaseState susceptible_state = 0; // S_a
     DiseaseState infectious_state = 5;  // Isymp_a
-    double susceptibility_scalar = 0.25;
-    double infectivity_scalar = 0.5;
-    // NOTE: use AI only when sure about underlying logic which was generated
-    // TODO: complete 4-tuple unwrapping
-    for (const auto &[susceptibility_scalar, infectivity_scalar, susceptible_state, infectous_state] : std::array<std::pair<double, double>, 4>{
-             std::make_pair(0.1, 0.1),
-             std::make_pair(0.1, 1.0),
-             std::make_pair(1.0, 0.1),
-             std::make_pair(1.0, 1.0),
-         })
+    const std::array<std::pair<double, double>, 4> modifierPairs = {{
+        std::make_pair(0.1, 0.1),
+        std::make_pair(0.1, 1.0),
+        std::make_pair(1.0, 0.1),
+        std::make_pair(1.0, 1.0)
+    }};
+
+    for (const auto &modifiers : modifierPairs)
     {
+      const double susceptibility_scalar = modifiers.first;
+      const double infectivity_scalar = modifiers.second;
+      const Time start = 0;
+      const Time end = 12 * HOUR_LENGTH;
 
-      Time start = 0;
-      Time end = 12 * HOUR_LENGTH;
+      const double expected = model.model->transmissibility() * (end - start) *
+                              susceptibility_scalar * infectivity_scalar *
+                              model.model->disease_states(susceptible_state).susceptibility() *
+                              model.model->disease_states(infectious_state).infectivity() /
+                              DAY_LENGTH;
 
-      double expected = model.model->transmissibility() * (end - start) *
-                        susceptibility_scalar * infectivity_scalar * model.model->disease_states(susceptible_state).susceptibility() *
-                        model.model->disease_states(infectious_state).infectivity() / DAY_LENGTH;
+      const double propensity = model.getPropensity(susceptible_state, infectious_state,
+                                                    start, end, susceptibility_scalar, infectivity_scalar);
 
-      double propensity = model.getPropensity(susceptible_state, infectious_state,
-                                              start, end, susceptibility_scalar, infectivity_scalar);
+      EXPECT_DOUBLE_EQ(propensity, expected);
     }
-    EXPECT_DOUBLE_EQ(propensity, expected);
   }
 
   TEST(DiseaseModelLogProbTest, LogProbabilityAccountsForOverlapDuration)

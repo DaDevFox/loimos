@@ -36,7 +36,7 @@ all: $(UNIT_TEST_BINS)
 
 # Build unit test executables
 DiseaseModelTest: DiseaseModelTest.o $(DISEASE_MODEL_DEPS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ -lgtest -lgtest_main -lpthread $(LIBS)
+	$(CHARMC) $(CXXFLAGS) -o $@ $^ -lgtest -lgtest_main -lpthread $(LIBS)
 
 InterventionModelTest: InterventionModelTest.o $(INTERVENTION_MODEL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ -lgtest -lgtest_main -lpthread $(LIBS)

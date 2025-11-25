@@ -56,7 +56,9 @@ endif
 # Set the ENABLE_UNIT_TESTING environment variable to compile for unit testing
 ifdef ENABLE_UNIT_TESTING
 INCLUDES +=	-I$(GTEST_HOME)/include
+INCLUDES +=	-I$(CHARM_HOME)/include
 LIBS     += -L$(GTEST_HOME)/lib -L$(GTEST_HOME)/lib64 -lgtest -lgtest_main
+LIBS     +=	-L$(CHARM_HOME)/lib -L$(CHARM_HOME)/lib64 
 OPTS     += -DENABLE_UNIT_TESTING
 endif
 
